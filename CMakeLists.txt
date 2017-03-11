@@ -11,4 +11,4 @@ add_executable(binprint
 	source/binprint.cpp
 )
 
-target_link_libraries(binprint PRIVATE bmp)
+target_link_libraries(binprint PRIVATE bmp lua)
