@@ -2,7 +2,6 @@
 
 #include <cstdio>
 #include <lua.hpp>
-#include <vector>
 
 int main(int argc, char *argv[]) {
 
@@ -20,16 +19,11 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  lua_getglobal(L, "window_size");
-  if (!lua_isnumber(L, -1)) {
-    lua_close(L);
-    fprintf(stderr, "error window_size must be a number");
-    return 1;
-  }
-  size_t window_size = lua_tonumber(L, -1);
-
   lua_getglobal(L, "width");
   size_t width = lua_tonumber(L, -1);
+
+  lua_getglobal(L, "endl");
+  size_t endl = lua_tonumber(L, -1);
 
   if (3 == argc) {
     std::FILE *file = fopen(argv[1], "r");
@@ -37,34 +31,25 @@ int main(int argc, char *argv[]) {
     std::size_t filesize = std::ftell(file);
     std::fseek(file, 0, SEEK_SET);
 
-    size_t height = filesize / width;
+    bmp img(argv[2], width);
 
-    bmp img(argv[2], width, height);
-
-    std::vector<uint8_t> points(window_size);
-
-    for (size_t i = 0; i < height; ++i) {
-      for (size_t j = 0; j < width; ++j) {
-
-        lua_getglobal(L, "compute_color");
-
-        for (size_t w = 0; w < window_size; ++w) {
-          points[w] = static_cast<uint8_t>(std::fgetc(file));
-          lua_pushinteger(L, points[w]);
-        }
-
-        lua_call(L, window_size, 3);
-
-        img << bmp::pixel{static_cast<uint8_t>(lua_tonumber(L, -1)),
-                          static_cast<uint8_t>(lua_tonumber(L, -2)),
-                          static_cast<uint8_t>(lua_tonumber(L, -3))};
-
-        for (size_t w = window_size - 1; w > 0; --w) {
-          std::ungetc(points[w], file);
-        }
+    char c;
+    for (int i = 0; i < filesize; ++i) {
+      c = std::fgetc(file);
+      if (c == endl) {
+        img << bmp::ENDL;
+        continue;
       }
-      img << bmp::ENDL;
+
+      lua_getglobal(L, "compute_color");
+      lua_pushinteger(L, c);
+      lua_call(L, 1, 3);
+
+      img << bmp::pixel{static_cast<uint8_t>(lua_tonumber(L, -1)),
+                        static_cast<uint8_t>(lua_tonumber(L, -2)),
+                        static_cast<uint8_t>(lua_tonumber(L, -3))};
     }
+    img << bmp::ENDL;
   }
 
   return 0;

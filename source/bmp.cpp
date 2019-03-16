@@ -2,10 +2,10 @@
 
 #include <cstring>
 
-bmp::bmp(const char *name, uint32_t width, uint32_t height) : name(name) {
-  uint32_t header_size = 54;
+bmp::bmp(const char *name, uint32_t width) : name(name), width(width), height(0), line(0) {
   line_padding = (width * 3) % 4;
-  size = header_size + (width * 3 + line_padding) * height;
+  size = header_size;
+  file = fopen(name, "w");
 
   uint8_t header[] = {
       // Header
@@ -27,27 +27,40 @@ bmp::bmp(const char *name, uint32_t width, uint32_t height) : name(name) {
       0x00, 0x00, 0x00, 0x00, // no palette
       0x00, 0x00, 0x00, 0x00  // all important colors
   };
-
-  // update size, width and height in the header
-  std::memcpy(header + 2, &size, sizeof(uint32_t));
-  std::memcpy(header + 18, &width, sizeof(uint32_t));
-  std::memcpy(header + 22, &height, sizeof(uint32_t));
-
-  file = fopen(name, "w");
-
   std::fwrite(header, sizeof(uint8_t), header_size, file);
 }
 
 bmp &bmp::operator<<(pixel p) {
+  if (line >= width) {
+    std::fseek(file, line_padding, SEEK_CUR);
+    line = 0;
+    height++;
+  }
+
   std::fwrite(&p, sizeof(uint8_t), 3, file);
+  line++;
   return *this;
 }
 
 bmp &bmp::operator<<(special_pixels p) {
-  if (line_padding > 0) {
-    std::fseek(file, line_padding, SEEK_CUR);
+  for (int i = line; i < width; ++i) {
+    (*this) << pixel{255, 255, 255};
   }
   return *this;
 }
 
-bmp::~bmp() { std::fclose(file); }
+bmp::~bmp() {
+  size += ((3 * width) + line_padding) * height;
+
+  std::fseek(file, 2, SEEK_SET);
+  std::fwrite(&size, sizeof(uint32_t), 1, file);
+
+  std::fseek(file, 18, SEEK_SET);
+  std::fwrite(&width, sizeof(uint32_t), 1, file);
+
+  int32_t height_flipped = -height;
+  std::fseek(file, 22, SEEK_SET);
+  std::fwrite(&height_flipped, sizeof(int32_t), 1, file);
+
+  std::fclose(file);
+}

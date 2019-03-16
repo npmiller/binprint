@@ -6,7 +6,7 @@
 
 struct bmp final {
 
-  bmp(const char *name, uint32_t width, uint32_t height);
+  bmp(const char *name, uint32_t width);
   ~bmp();
 
 #pragma pack(push, 1)
@@ -25,8 +25,12 @@ struct bmp final {
   const char *name;
   std::FILE *file;
 
+  uint32_t width;
+  uint32_t height;
   uint32_t line_padding;
   uint32_t size;
+  uint32_t line;
+  const uint32_t header_size = 54;
 };
 
 #endif
