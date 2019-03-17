@@ -113,6 +113,68 @@ private:
   -L <dir>                  Add directory to plugin search path
 )help";
 };
+
+struct window final {
+  struct iterator final {
+    size_t pos;
+    const size_t size;
+    const uint8_t *data;
+
+    iterator &operator++() {
+      pos++;
+      pos %= size;
+      return *this;
+    }
+
+    iterator operator+(int idx) {
+      size_t new_pos = pos + idx;
+      new_pos %= size;
+      return iterator(new_pos, size, data);
+    }
+
+    bool operator==(iterator other) const { return pos == other.pos; }
+    bool operator!=(iterator other) const { return pos != other.pos; }
+    uint8_t operator*() const { return data[pos]; }
+
+    iterator(size_t pos, const size_t size, const uint8_t *data)
+        : pos(pos), size(size), data(data) {}
+  };
+
+  iterator begin() {
+    return iterator(begin_idx, size + 1, data);
+  }
+
+  iterator end() {
+    return iterator(end_idx, size + 1, data);
+  }
+
+  window(size_t size) : size(size), begin_idx(0), end_idx(size) {
+    data = new uint8_t[size + 1];
+  }
+
+  ~window() {
+    delete[] data;
+  }
+
+  void push(uint8_t value) {
+    data[end_idx] = value;
+
+    ++end_idx;
+    end_idx %= size + 1;
+
+    ++begin_idx;
+    begin_idx %= size + 1;
+  }
+
+  void set(iterator it, uint8_t value) {
+    data[it.pos] = value;
+  }
+
+  uint8_t *data;
+  size_t size;
+  size_t begin_idx;
+  size_t end_idx;
+};
 } // namespace binprint
 
 int main(int argc, char *argv[]) {
@@ -133,6 +195,12 @@ int main(int argc, char *argv[]) {
   // setup lua env
   lua_State *L = luaL_newstate();
   luaL_openlibs(L);
+
+  lua_pushinteger(L, bmp::ENDL);
+  lua_setglobal(L, "ENDL");
+
+  lua_pushinteger(L, bmp::SKIP);
+  lua_setglobal(L, "SKIP");
 
   // load plugin
   int luaerr = LUA_OK;
@@ -169,15 +237,50 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  size_t window = 1;
+  lua_getglobal(L, "window");
+  if (!lua_isnil(L, -1)) {
+    window = lua_tonumber(L, -1);
+    if (window == 0 || window % 2 != 1) {
+      fprintf(stderr,
+              "binprint: invalid window in plugin '%s', window must be a "
+              "non-zero odd positive number\n",
+              plugin.c_str());
+    }
+  }
+
+  uint8_t padding = 0;
+  lua_getglobal(L, "window_padding");
+  if (!lua_isnil(L, -1)) {
+    padding = lua_tonumber(L, -1);
+  }
+
+  size_t prefetch = window - (window / 2) - 1;
+  binprint::window w(window);
+
+  for (int i = 0; i < (window / 2) + 1; ++i) {
+    w.set(w.begin() + i, padding);
+  }
+
+  for (int i = 0; i < prefetch; ++i) {
+    w.set(w.begin() + i, std::fgetc(file));
+  }
+
   bmp img(args.output, width);
 
-  for (int i = 0; i < filesize; ++i) {
-    char c = std::fgetc(file);
+  for (int i = 0; i < (filesize + prefetch); ++i) {
+    if (i < filesize) {
+      w.push(std::fgetc(file));
+    } else {
+      w.push(padding);
+    }
 
     lua_getglobal(L, "compute_color");
-    lua_pushinteger(L, c);
+    for (uint8_t c : w) {
+      lua_pushinteger(L, c);
+    }
 
-    luaerr = lua_pcall(L, 1, 3, 0);
+    luaerr = lua_pcall(L, w.size, 3, 0);
     if (LUA_OK != luaerr) {
       const char *err = lua_tostring(L, -1);
       lua_close(L);
@@ -186,10 +289,18 @@ int main(int argc, char *argv[]) {
       return -1;
     }
 
-    // nil values from compute_color mean line jump
     if (lua_isnil(L, -1)) {
-      img << bmp::ENDL;
-      lua_pop(L, 3);
+      bmp::special_pixels code =
+          static_cast<bmp::special_pixels>(lua_tonumber(L, -2));
+      switch (code) {
+      case bmp::ENDL:
+      case bmp::SKIP:
+        img << code;
+        lua_pop(L, 3);
+        break;
+      default:
+        fprintf(stderr, "binprint: invalid special pixel code\n");
+      }
       continue;
     }
 

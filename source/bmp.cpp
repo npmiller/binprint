@@ -43,8 +43,14 @@ bmp &bmp::operator<<(pixel p) {
 }
 
 bmp &bmp::operator<<(special_pixels p) {
-  for (int i = line; i < width; ++i) {
-    (*this) << pixel{255, 255, 255};
+  switch (p) {
+  case ENDL:
+    for (int i = line; i < width; ++i) {
+      (*this) << pixel{255, 255, 255};
+    }
+    break;
+  case SKIP:
+    break;
   }
   return *this;
 }

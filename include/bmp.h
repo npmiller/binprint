@@ -17,7 +17,7 @@ struct bmp final {
   };
 #pragma pack(pop)
 
-  enum special_pixels { ENDL };
+  enum special_pixels { ENDL, SKIP };
 
   bmp &operator<<(pixel p);
   bmp &operator<<(special_pixels p);
