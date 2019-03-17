@@ -70,11 +70,21 @@ struct args final {
       plugin.assign("code");
     }
 
+    // add default plugin search paths
+    const char *home = std::getenv("HOME");
+    if (nullptr != home) {
+      std::stringstream s;
+      s << home << "/.config/binprint/plugins";
+      paths.push_back(s.str());
+    }
+    paths.push_back("/etc/binprint/plugins");
+    paths.push_back("/usr/share/binprint/plugins");
+
     return true;
   }
 
   std::string find_plugin_path() {
-    for (char *path : paths) {
+    for (std::string &path : paths) {
       std::stringstream s;
       s << path << "/" << plugin << ".lua";
 
@@ -90,7 +100,7 @@ struct args final {
   std::string plugin;
   char *input;
   char *output;
-  std::vector<char *> paths;
+  std::vector<std::string> paths;
 
 private:
   int argc;
