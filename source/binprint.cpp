@@ -6,6 +6,7 @@
 #include <vector>
 #include <sstream>
 #include <fstream>
+#include <math.h>
 
 namespace binprint {
 struct args final {
@@ -140,28 +141,38 @@ int main(int argc, char *argv[]) {
     const char* err = lua_tostring(L, -1);
     lua_close(L);
     fprintf(stderr, "binprint: %s\n", err);
-    return 1;
+    return -1;
   }
 
-  lua_getglobal(L, "width");
-  size_t width = lua_tonumber(L, -1);
-
-  lua_getglobal(L, "endl");
-  size_t endl = lua_tonumber(L, -1);
-
+  // get the size of the input file
   std::FILE *file = fopen(args.input, "r");
   std::fseek(file, 0, SEEK_END);
   std::size_t filesize = std::ftell(file);
   std::fseek(file, 0, SEEK_SET);
 
+  // figure out the width of the output picture
+  size_t width;
+  lua_getglobal(L, "width");
+  if (lua_isnil(L, -1)) {
+    // pick default width for roughly square image
+    width = sqrt(filesize) + 1;
+  } else {
+    // get width from plugin
+    width = lua_tonumber(L, -1);
+    if (width == 0) {
+      fprintf(stderr,
+              "binprint: invalid width in plugin '%s', width must be "
+              "a non-zero positive number\n",
+              plugin.c_str());
+      std::fclose(file);
+      return -1;
+    }
+  }
+
   bmp img(args.output, width);
 
   for (int i = 0; i < filesize; ++i) {
     char c = std::fgetc(file);
-    if (c == endl) {
-      img << bmp::ENDL;
-      continue;
-    }
 
     lua_getglobal(L, "compute_color");
     lua_pushinteger(L, c);
@@ -170,8 +181,16 @@ int main(int argc, char *argv[]) {
     if (LUA_OK != luaerr) {
       const char *err = lua_tostring(L, -1);
       lua_close(L);
+      std::fclose(file);
       fprintf(stderr, "binprint: %s\n", err);
-      return 1;
+      return -1;
+    }
+
+    // nil values from compute_color mean line jump
+    if (lua_isnil(L, -1)) {
+      img << bmp::ENDL;
+      lua_pop(L, 3);
+      continue;
     }
 
     img << bmp::pixel{static_cast<uint8_t>(lua_tonumber(L, -1)),
@@ -179,6 +198,8 @@ int main(int argc, char *argv[]) {
                       static_cast<uint8_t>(lua_tonumber(L, -3))};
   }
   img << bmp::ENDL;
+
+  std::fclose(file);
 
   return 0;
 }
