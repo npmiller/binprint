@@ -236,6 +236,7 @@ int main(int argc, char *argv[]) {
       return -1;
     }
   }
+  lua_pop(L, 1);
 
   size_t window = 1;
   lua_getglobal(L, "window");
@@ -248,12 +249,14 @@ int main(int argc, char *argv[]) {
               plugin.c_str());
     }
   }
+  lua_pop(L, 1);
 
   uint8_t padding = 0;
   lua_getglobal(L, "window_padding");
   if (!lua_isnil(L, -1)) {
     padding = lua_tonumber(L, -1);
   }
+  lua_pop(L, 1);
 
   size_t prefetch = window - (window / 2) - 1;
   binprint::window w(window);
@@ -307,6 +310,7 @@ int main(int argc, char *argv[]) {
     img << bmp::pixel{static_cast<uint8_t>(lua_tonumber(L, -1)),
                       static_cast<uint8_t>(lua_tonumber(L, -2)),
                       static_cast<uint8_t>(lua_tonumber(L, -3))};
+    lua_pop(L, 3);
   }
   img << bmp::ENDL;
 
