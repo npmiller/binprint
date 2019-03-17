@@ -106,7 +106,10 @@ private:
   int argc;
   char **argv;
   static const constexpr char *help =
-      R"help(Usage: binprint <input file> <output file>
+      R"help(Usage: binprint [OPTION] <input file> <output file>
+  -h, --help                Print this message
+  -p <arg>, --plugin <arg>  Name of the plugin to use
+  -L <dir>                  Add directory to plugin search path
 )help";
 };
 } // namespace binprint
