@@ -1,6 +1,7 @@
 #include <bmp.h>
 
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <lua.hpp>
 #include <vector>
@@ -11,7 +12,7 @@
 namespace binprint {
 struct args final {
   args(int argc, char **argv)
-      : input(nullptr), output(nullptr), argc(argc), argv(argv){};
+      : input(nullptr), output(nullptr), width(0), argc(argc), argv(argv){};
 
   bool parse() {
     for (int i = 1; i < argc; ++i) {
@@ -37,6 +38,24 @@ struct args final {
           return false;
         }
         plugin.assign(argv[i]);
+        continue;
+      }
+
+      if (arg == "-w" || arg == "--width") {
+        i++;
+        if (i >= argc) {
+          fprintf(stderr,
+                  "binprint: option '-w', '--width' requires an argument\n");
+          return false;
+        }
+        width = atoi(argv[i]);
+        if (width <= 0) {
+          fprintf(stderr,
+                  "binprint: invalid width argument '%s', width must be a "
+                  "non-zero positive number\n",
+                  argv[i]);
+          return false;
+        }
         continue;
       }
 
@@ -101,6 +120,7 @@ struct args final {
   std::string plugin;
   char *input;
   char *output;
+  int32_t width;
   std::vector<std::string> paths;
 
 private:
@@ -110,6 +130,7 @@ private:
       R"help(Usage: binprint [OPTION] <input file> <output file>
   -h, --help                Print this message
   -p <arg>, --plugin <arg>  Name of the plugin to use
+  -w <arg>, --width <arg>   Set or override output image width
   -L <dir>                  Add directory to plugin search path
 )help";
 };
@@ -213,16 +234,28 @@ int main(int argc, char *argv[]) {
   }
 
   // get the size of the input file
-  std::FILE *file = fopen(args.input, "r");
-  std::fseek(file, 0, SEEK_END);
-  std::size_t filesize = std::ftell(file);
-  std::fseek(file, 0, SEEK_SET);
+  std::FILE *file;
+  if (strcmp(args.input, "-") == 0) {
+    file = stdin;
+  } else {
+    file = fopen(args.input, "r");
+  }
 
   // figure out the width of the output picture
   size_t width;
   lua_getglobal(L, "width");
-  if (lua_isnil(L, -1)) {
+  if (args.width != 0) {
+    width = args.width;
+  } else if (lua_isnil(L, -1)) {
     // pick default width for roughly square image
+    if (file == stdin) {
+      fprintf(stderr, "binprint: can't pick width with stdin input, please use "
+                      "'-w' or specify width in the plugin\n");
+      return -1;
+    }
+    std::fseek(file, 0, SEEK_END);
+    std::size_t filesize = std::ftell(file);
+    std::fseek(file, 0, SEEK_SET);
     width = sqrt(filesize) + 1;
   } else {
     // get width from plugin
@@ -271,11 +304,13 @@ int main(int argc, char *argv[]) {
 
   bmp img(args.output, width);
 
-  for (int i = 0; i < (filesize + prefetch); ++i) {
-    if (i < filesize) {
-      w.push(std::fgetc(file));
-    } else {
+  int32_t c = 0;
+  while (((c = std::fgetc(file)) != EOF) || prefetch != 0) {
+    if (c != EOF) {
+      w.push(c);
+    } else if (prefetch > 0) {
       w.push(padding);
+      --prefetch;
     }
 
     lua_getglobal(L, "compute_color");
